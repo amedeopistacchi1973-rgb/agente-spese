@@ -1,54 +1,29 @@
-
 <!DOCTYPE html>
 <html lang="it">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Il mio agente spese</title>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      max-width: 520px;
-      margin: 25px auto;
-      padding: 18px;
-      background: #f4f6f8;
-      color: #222;
-    }
-    h1 { font-size: 25px; }
-    button, input, select {
-      box-sizing: border-box;
-      width: 100%;
-      padding: 13px;
-      margin: 7px 0 12px;
-      font-size: 16px;
-      border-radius: 8px;
-      border: 1px solid #bbb;
-    }
-    button {
-      background: #1769aa;
-      color: white;
-      border: 0;
-      cursor: pointer;
-    }
-    .pannello {
-      background: white;
-      padding: 16px;
-      border-radius: 12px;
-      margin-top: 18px;
-    }
-    #modulo { display: none; }
-    #messaggio { white-space: pre-wrap; }
+    body{font-family:Arial,sans-serif;max-width:520px;margin:25px auto;padding:18px;background:#f4f6f8;color:#222}
+    h1{font-size:25px}
+    button,input,select{box-sizing:border-box;width:100%;padding:13px;margin:7px 0 12px;font-size:16px;border-radius:8px;border:1px solid #bbb}
+    button{background:#1769aa;color:white;border:0;cursor:pointer}
+    button:disabled{opacity:.6;cursor:wait}
+    .pannello{background:white;padding:16px;border-radius:12px;margin-top:18px}
+    #modulo{display:none}
+    #messaggio{white-space:pre-wrap;overflow-wrap:anywhere}
   </style>
 </head>
 <body>
   <h1>🎙️ Il mio agente spese</h1>
   <p>Premi il pulsante e raccontami la spesa con una frase.</p>
-
   <button id="microfono" type="button">🎙️ Parla</button>
   <p id="messaggio">Pronto ad ascoltare.</p>
 
   <div id="modulo" class="pannello">
-    <h2>Controlla la spesa</h2>
+    <h2>Controlla il movimento</h2>
 
     <label for="descrizione">Descrizione</label>
     <input id="descrizione" placeholder="Es. Spesa da Pewex">
@@ -66,151 +41,222 @@
     <label for="categoria">Categoria</label>
     <select id="categoria">
       <option value="">Seleziona categoria</option>
-      <option>Alimentari</option>
-      <option>Casa</option>
-      <option>Trasporti</option>
-      <option>Salute</option>
-      <option>Svago</option>
-      <option>Abbigliamento</option>
-      <option>Bollette</option>
-      <option>Stipendio</option>
-      <option>Altro</option>
+      <option>Alimentari</option><option>Casa</option>
+      <option>Trasporti</option><option>Salute</option>
+      <option>Svago</option><option>Abbigliamento</option>
+      <option>Bollette</option><option>Stipendio</option><option>Altro</option>
     </select>
 
     <label for="pagamento">Pagamento</label>
     <select id="pagamento">
-      <option>Carta</option>
-      <option>Contanti</option>
-      <option>Bonifico</option>
-      <option>Altro</option>
+      <option>Carta</option><option>Contanti</option>
+      <option>Bonifico</option><option>Altro</option>
     </select>
 
-    <label for="conto">Conto utilizzato</label>
+    <label for="conto">Conto utilizzato / di partenza</label>
     <select id="conto">
       <option value="">Seleziona il conto</option>
-      <option>Contanti</option>
-      <option>Carta ADI</option>
-      <option>Carta Pipino</option>
+      <option>Contanti</option><option>Carta ADI</option><option>Carta Pipino</option>
     </select>
+
+    <div id="destinazioneBox" style="display:none">
+      <label for="destinazione">Conto di destinazione</label>
+      <select id="destinazione">
+        <option value="">Seleziona il conto di destinazione</option>
+        <option>Contanti</option><option>Carta ADI</option><option>Carta Pipino</option>
+      </select>
+    </div>
 
     <label for="note">Note (facoltative)</label>
     <input id="note" placeholder="Eventuali dettagli">
 
-    <button id="conferma" type="button">Conferma i dati</button>
+    <button id="conferma" type="button">Conferma e salva nel foglio</button>
   </div>
 
-  <script>
-    const messaggio = document.getElementById('messaggio');
-    const modulo = document.getElementById('modulo');
+<script>
+const CLIENT_ID = '546112326643-fftndpifuam4t9kjk84t9k1o3bh7tgpc.apps.googleusercontent.com';
+const SPREADSHEET_ID = '1ryuKPPY0cqozL3EFTwZRbTx7b95XKdOQfKxWVCBHqYY';
+const SHEET_NAME = 'Il mio agente spese';
+const SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 
-    function analizzaFrase(testo) {
-      const frase = testo.trim();
-      const minuscola = frase.toLowerCase();
+const $ = id => document.getElementById(id);
+const messaggio = $('messaggio');
+const modulo = $('modulo');
+let tokenClient;
+let tokenInAttesa = false;
 
-      const corrispondenzaImporto =
-        minuscola.match(/(\d+(?:[.,]\d{1,2})?)\s*(?:euro|eur|€)?/);
+$('tipo').addEventListener('change', () => {
+  $('destinazioneBox').style.display =
+    $('tipo').value === 'Trasferimento' ? 'block' : 'none';
+});
 
-      const importo = corrispondenzaImporto
-        ? corrispondenzaImporto[1].replace(',', '.')
-        : '';
+function analizzaFrase(testo) {
+  const frase = testo.trim();
+  const minuscola = frase.toLowerCase();
+  const match = minuscola.match(/(\d+(?:[.,]\d{1,2})?)\s*(?:euro|eur|€)?/);
+  $('importo').value = match ? match[1].replace(',', '.') : '';
 
-      let descrizione = frase
-        .replace(/ho speso|ho pagato|ho acquistato/ig, '')
-        .replace(/\d+(?:[.,]\d{1,2})?\s*(?:euro|eur|€)?/ig, '')
-        .replace(/con la carta adi|con carta adi|carta adi/ig, '')
-        .replace(/con la carta pipino|con carta pipino|carta pipino/ig, '')
-        .replace(/in contanti|con contanti/ig, '')
-        .replace(/da\s+/ig, 'da ')
-        .replace(/\s+/g, ' ')
-        .trim();
+  let descrizione = frase
+    .replace(/ho speso|ho pagato|ho acquistato|ho incassato/ig, '')
+    .replace(/\d+(?:[.,]\d{1,2})?\s*(?:euro|eur|€)?/ig, '')
+    .replace(/con la carta adi|con carta adi|carta adi/ig, '')
+    .replace(/con la carta pipino|con carta pipino|carta pipino/ig, '')
+    .replace(/in contanti|con contanti/ig, '')
+    .replace(/\s+/g, ' ').trim();
 
-      if (!descrizione) descrizione = 'Spesa';
+  $('descrizione').value = descrizione
+    ? descrizione.charAt(0).toUpperCase() + descrizione.slice(1)
+    : 'Movimento';
 
-      document.getElementById('descrizione').value =
-        descrizione.charAt(0).toUpperCase() + descrizione.slice(1);
-      document.getElementById('importo').value = importo;
+  if (minuscola.includes('carta adi')) {
+    $('conto').value = 'Carta ADI'; $('pagamento').value = 'Carta';
+  } else if (minuscola.includes('carta pipino')) {
+    $('conto').value = 'Carta Pipino'; $('pagamento').value = 'Carta';
+  } else if (minuscola.includes('contanti')) {
+    $('conto').value = 'Contanti'; $('pagamento').value = 'Contanti';
+  } else {
+    $('conto').value = '';
+  }
 
-      if (minuscola.includes('carta adi')) {
-        document.getElementById('conto').value = 'Carta ADI';
-        document.getElementById('pagamento').value = 'Carta';
-      } else if (minuscola.includes('carta pipino')) {
-        document.getElementById('conto').value = 'Carta Pipino';
-        document.getElementById('pagamento').value = 'Carta';
-      } else if (minuscola.includes('contanti')) {
-        document.getElementById('conto').value = 'Contanti';
-        document.getElementById('pagamento').value = 'Contanti';
-      } else {
-        document.getElementById('conto').value = '';
+  if (minuscola.includes('trasferimento') || minuscola.includes('giroconto')) {
+    $('tipo').value = 'Trasferimento';
+  } else if (minuscola.includes('entrata') || minuscola.includes('incassato')) {
+    $('tipo').value = 'Entrata';
+  } else {
+    $('tipo').value = 'Uscita';
+  }
+  $('tipo').dispatchEvent(new Event('change'));
+
+  if (/pewex|supermercato|alimentari|spesa/i.test(minuscola)) {
+    $('categoria').value = 'Alimentari';
+  } else if (/stipendio/i.test(minuscola)) {
+    $('categoria').value = 'Stipendio';
+  } else {
+    $('categoria').value = '';
+  }
+
+  modulo.style.display = 'block';
+  messaggio.textContent = 'Ho trascritto: "' + frase +
+    '". Controlla tutti i dati prima di confermare.';
+}
+
+$('microfono').addEventListener('click', () => {
+  const Riconoscimento = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Riconoscimento) {
+    messaggio.textContent = 'Riconoscimento vocale non disponibile. Prova con Google Chrome.';
+    return;
+  }
+  const ascolto = new Riconoscimento();
+  ascolto.lang = 'it-IT';
+  ascolto.interimResults = false;
+  ascolto.maxAlternatives = 1;
+  messaggio.textContent = 'Ti ascolto...';
+  ascolto.onresult = e => analizzaFrase(e.results[0][0].transcript);
+  ascolto.onerror = e => { messaggio.textContent = 'Errore microfono: ' + e.error; };
+  ascolto.start();
+});
+
+function creaTokenClient() {
+  if (!window.google || !google.accounts || !google.accounts.oauth2) {
+    messaggio.textContent = 'Google non è ancora pronto. Riprova tra qualche secondo.';
+    tokenInAttesa = false;
+    $('conferma').disabled = false;
+    return;
+  }
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: SCOPE,
+    callback: async risposta => {
+      if (risposta.error || !risposta.access_token) {
+        messaggio.textContent = 'Autorizzazione Google non riuscita. Riprova.';
+        tokenInAttesa = false;
+        $('conferma').disabled = false;
+        return;
       }
-
-      if (minuscola.includes('entrata') || minuscola.includes('incassato')) {
-        document.getElementById('tipo').value = 'Entrata';
-      } else {
-        document.getElementById('tipo').value = 'Uscita';
-      }
-
-      if (minuscola.includes('pewex') ||
-          minuscola.includes('supermercato') ||
-          minuscola.includes('spesa')) {
-        document.getElementById('categoria').value = 'Alimentari';
-      } else {
-        document.getElementById('categoria').value = '';
-      }
-
-      modulo.style.display = 'block';
-      messaggio.textContent = 'Ho capito: ' + frase +
-        '\nControlla e correggi i dati prima di confermare.';
+      await salvaNelFoglio(risposta.access_token);
     }
+  });
+}
 
-    document.getElementById('microfono').addEventListener('click', () => {
-      const Riconoscimento =
-        window.SpeechRecognition || window.webkitSpeechRecognition;
+async function salvaNelFoglio(token) {
+  const tipo = $('tipo').value;
+  const conto = $('conto').value;
+  const destinazione = $('destinazione').value;
 
-      if (!Riconoscimento) {
-        messaggio.textContent =
-          'Il riconoscimento vocale non è disponibile. Prova con Google Chrome.';
-        return;
-      }
+  const riga = [
+    (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString()),
+    new Date().toISOString(),
+    $('descrizione').value.trim(),
+    Number($('importo').value),
+    tipo,
+    $('categoria').value,
+    $('pagamento').value,
+    conto,
+    $('note').value.trim(),
+    tipo === 'Trasferimento' ? destinazione : '',
+    'Confermato'
+  ];
 
-      const ascolto = new Riconoscimento();
-      ascolto.lang = 'it-IT';
-      ascolto.interimResults = false;
-      ascolto.maxAlternatives = 1;
+  const url = 'https://sheets.googleapis.com/v4/spreadsheets/' +
+    SPREADSHEET_ID + '/values/' +
+    encodeURIComponent("'" + SHEET_NAME + "'!A:K") +
+    ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS';
 
-      messaggio.textContent = 'Ti ascolto...';
-
-      ascolto.onresult = (evento) => {
-        analizzaFrase(evento.results[0][0].transcript);
-      };
-
-      ascolto.onerror = (evento) => {
-        messaggio.textContent = 'Problema con il microfono: ' + evento.error;
-      };
-
-      ascolto.start();
+  try {
+    const risposta = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ values: [riga] })
     });
+    const risultato = await risposta.json();
+    if (!risposta.ok) {
+      throw new Error(risultato.error?.message || 'Errore API Google Sheets');
+    }
+    messaggio.textContent = '✅ Movimento salvato nel foglio Google!\n' +
+      $('descrizione').value + ' — ' + Number($('importo').value).toFixed(2) +
+      ' €\nConto: ' + conto + '\nTipo: ' + tipo;
+    modulo.style.display = 'none';
+    $('note').value = '';
+  } catch (errore) {
+    messaggio.textContent = '❌ Salvataggio non riuscito: ' + errore.message +
+      '\nControlla autorizzazioni e configurazione Google.';
+  } finally {
+    tokenInAttesa = false;
+    $('conferma').disabled = false;
+  }
+}
 
-    document.getElementById('conferma').addEventListener('click', () => {
-      const descrizione = document.getElementById('descrizione').value.trim();
-      const importo = Number(document.getElementById('importo').value);
-      const conto = document.getElementById('conto').value;
+$('conferma').addEventListener('click', () => {
+  const descrizione = $('descrizione').value.trim();
+  const importo = Number($('importo').value);
+  const conto = $('conto').value;
+  const tipo = $('tipo').value;
 
-      if (!descrizione || !Number.isFinite(importo) || importo <= 0 || !conto) {
-        messaggio.textContent =
-          'Controlla i dati: inserisci descrizione, importo e conto.';
-        return;
-      }
+  if (!descrizione || !Number.isFinite(importo) || importo <= 0 || !conto) {
+    messaggio.textContent = 'Inserisci descrizione, importo positivo e conto.';
+    return;
+  }
+  if (tipo === 'Trasferimento' &&
+      (!$('destinazione').value || $('destinazione').value === conto)) {
+    messaggio.textContent = 'Per il trasferimento scegli un conto di destinazione diverso da quello di partenza.';
+    return;
+  }
+  if (tokenInAttesa) return;
 
-      messaggio.textContent =
-        'Dati confermati sul sito, ma NON ancora salvati nel foglio Google.\n\n' +
-        'Descrizione: ' + descrizione +
-        '\nImporto: ' + importo.toFixed(2) + ' €' +
-        '\nTipo: ' + document.getElementById('tipo').value +
-        '\nCategoria: ' + document.getElementById('categoria').value +
-        '\nPagamento: ' + document.getElementById('pagamento').value +
-        '\nConto: ' + conto +
-        '\n\nIl collegamento sicuro al foglio sarà il passaggio successivo.';
-    });
-  </script>
+  if (!window.google || !google.accounts || !google.accounts.oauth2) {
+    messaggio.textContent = 'Attendi qualche secondo e riprova: Google sta caricando.';
+    return;
+  }
+
+  tokenInAttesa = true;
+  $('conferma').disabled = true;
+  messaggio.textContent = 'Richiesta autorizzazione Google...';
+  creaTokenClient();
+  if (tokenClient) tokenClient.requestAccessToken();
+});
+</script>
 </body>
 </html>
