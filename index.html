@@ -92,70 +92,90 @@ $('tipo').addEventListener('change', () => {
 
 function analizzaFrase(testo) {
   const frase = testo.trim();
-  const minuscola = frase.toLowerCase();
-  const match = minuscola.match(/(\d+(?:[.,]\d{1,2})?)\s*(?:euro|eur|€)?/);
-  $('importo').value = match ? match[1].replace(',', '.') : '';
+  const minuscola = frase.toLowerCase()
+    .replace(/[’]/g, "'");
 
-  let descrizione = frase
-    .replace(/ho speso|ho pagato|ho acquistato|ho incassato/ig, '')
-    .replace(/\d+(?:[.,]\d{1,2})?\s*(?:euro|eur|€)?/ig, '')
-    .replace(/con la carta adi|con carta adi|carta adi/ig, '')
-    .replace(/con la carta pipino|con carta pipino|carta pipino/ig, '')
-    .replace(/in contanti|con contanti/ig, '')
-    .replace(/\s+/g, ' ').trim();
+  // Importo: 10, 10 euro, 10,50 euro, 10.50 €
+  const matchImporto = minuscola.match(
+    /(?:^|\s)(\d+(?:[.,]\d{1,2})?)(?=\s*(?:euro|eur|€)?(?:\s|$))/i
+  );
 
-  $('descrizione').value = descrizione
-    ? descrizione.charAt(0).toUpperCase() + descrizione.slice(1)
-    : 'Movimento';
+  $('importo').value = matchImporto
+    ? matchImporto[1].replace(',', '.')
+    : '';
 
-  if (minuscola.includes('carta adi')) {
-    $('conto').value = 'Carta ADI'; $('pagamento').value = 'Carta';
-  } else if (minuscola.includes('carta pipino')) {
-    $('conto').value = 'Carta Pipino'; $('pagamento').value = 'Carta';
-  } else if (minuscola.includes('contanti')) {
-    $('conto').value = 'Contanti'; $('pagamento').value = 'Contanti';
+  // Riconoscimento del tipo di movimento
+  const trasferimento =
+    /\b(trasferimento|giroconto|spostato|sposta|trasferisci)\b/i.test(minuscola);
+
+  const entrata =
+    /\b(entrata|incassato|ricevuto|ricevuta|stipendio|rimborso|accredito)\b/i.test(minuscola);
+
+  $('tipo').value = trasferimento
+    ? 'Trasferimento'
+    : entrata ? 'Entrata' : 'Uscita';
+
+  // Riconoscimento del conto
+  if (/carta\s+adi/i.test(minuscola)) {
+    $('conto').value = 'Carta ADI';
+    $('pagamento').value = 'Carta';
+  } else if (/carta\s+pipino/i.test(minuscola)) {
+    $('conto').value = 'Carta Pipino';
+    $('pagamento').value = 'Carta';
+  } else if (/\b(contanti|in contante)\b/i.test(minuscola)) {
+    $('conto').value = 'Contanti';
+    $('pagamento').value = 'Contanti';
   } else {
     $('conto').value = '';
   }
 
-  if (minuscola.includes('trasferimento') || minuscola.includes('giroconto')) {
-    $('tipo').value = 'Trasferimento';
-  } else if (minuscola.includes('entrata') || minuscola.includes('incassato')) {
-    $('tipo').value = 'Entrata';
-  } else {
-    $('tipo').value = 'Uscita';
-  }
+  // Riconoscimento della destinazione nei trasferimenti
+  const conti = ['Contanti', 'Carta ADI', 'Carta Pipino'];
+  const destinazione = conti.find(conto =>
+    minuscola.includes('verso ' + conto.toLowerCase()) ||
+    minuscola.includes('a ' + conto.toLowerCase()) ||
+    minuscola.includes('su ' + conto.toLowerCase())
+  );
+
+  $('destinazione').value = destinazione || '';
   $('tipo').dispatchEvent(new Event('change'));
 
-  if (/pewex|supermercato|alimentari|spesa/i.test(minuscola)) {
-    $('categoria').value = 'Alimentari';
-  } else if (/stipendio/i.test(minuscola)) {
-    $('categoria').value = 'Stipendio';
-  } else {
-    $('categoria').value = '';
-  }
+  // Categorie automatiche
+  const categorie = [
+    [/pewex|supermercato|alimentari|spesa|market/i, 'Alimentari'],
+    [/affitto|mobili|casa|arredamento/i, 'Casa'],
+    [/benzina|carburante|autobus|treno|taxi|parcheggio/i, 'Trasporti'],
+    [/farmacia|medico|visita|dentista/i, 'Salute'],
+    [/cinema|ristorante|bar|vacanza|svago/i, 'Svago'],
+    [/vestiti|scarpe|abbigliamento/i, 'Abbigliamento'],
+    [/bolletta|luce|gas|acqua|internet/i, 'Bollette'],
+    [/stipendio/i, 'Stipendio']
+  ];
+
+  const categoriaTrovata = categorie.find(([regex]) => regex.test(minuscola));
+  $('categoria').value = categoriaTrovata
+    ? categoriaTrovata[1]
+    : (entrata ? 'Altro' : '');
+
+  // Descrizione ripulita
+  let descrizione = frase
+    .replace(/\b(ho speso|ho pagato|ho acquistato|ho comprato|ho incassato|ho ricevuto|ho trasferito|trasferisci|sposta|spostato|giroconto|trasferimento|entrata|uscita)\b/ig, '')
+    .replace(/\d+(?:[.,]\d{1,2})?\s*(?:euro|eur|€)?/ig, '')
+    .replace(/\b(con la carta|con carta|carta)\s*(adi|pipino)\b/ig, '')
+    .replace(/\b(in contanti|con contanti|contanti|in contante)\b/ig, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  $('descrizione').value = descrizione
+    ? descrizione.charAt(0).toUpperCase() + descrizione.slice(1)
+    : 'Movimento da descrivere';
 
   modulo.style.display = 'block';
-  messaggio.textContent = 'Ho trascritto: "' + frase +
-    '". Controlla tutti i dati prima di confermare.';
+  messaggio.textContent =
+    'Ho interpretato: "' + frase + '".\n' +
+    'Controlla descrizione, importo, tipo e conto. ' +
+    'Se qualcosa non è corretto, modificalo prima di salvare.';
 }
-
-$('microfono').addEventListener('click', () => {
-  const Riconoscimento = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!Riconoscimento) {
-    messaggio.textContent = 'Riconoscimento vocale non disponibile. Prova con Google Chrome.';
-    return;
-  }
-  const ascolto = new Riconoscimento();
-  ascolto.lang = 'it-IT';
-  ascolto.interimResults = false;
-  ascolto.maxAlternatives = 1;
-  messaggio.textContent = 'Ti ascolto...';
-  ascolto.onresult = e => analizzaFrase(e.results[0][0].transcript);
-  ascolto.onerror = e => { messaggio.textContent = 'Errore microfono: ' + e.error; };
-  ascolto.start();
-});
-
 function creaTokenClient() {
   if (!window.google || !google.accounts || !google.accounts.oauth2) {
     messaggio.textContent = 'Google non è ancora pronto. Riprova tra qualche secondo.';
