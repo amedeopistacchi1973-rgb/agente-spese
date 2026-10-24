@@ -14,6 +14,9 @@
     .pannello{background:white;padding:16px;border-radius:12px;margin-top:18px}
     #modulo{display:none}
     #messaggio{white-space:pre-wrap;overflow-wrap:anywhere}
+    .saldi{display:grid;grid-template-columns:1fr;gap:10px}
+    .saldo{display:flex;justify-content:space-between;gap:12px;padding:12px;background:#f4f6f8;border-radius:8px}
+    .saldo strong{font-variant-numeric:tabular-nums}
   </style>
 </head>
 <body>
@@ -21,6 +24,17 @@
   <p>Premi il pulsante e raccontami la spesa con una frase.</p>
   <button id="microfono" type="button">🎙️ Parla</button>
   <p id="messaggio">Pronto ad ascoltare.</p>
+
+  <div class="pannello">
+    <h2>💶 Saldo dei conti</h2>
+    <div id="saldi" class="saldi">
+      <div class="saldo"><span>Contanti</span><strong>—</strong></div>
+      <div class="saldo"><span>Carta ADI</span><strong>—</strong></div>
+      <div class="saldo"><span>Carta Pipino</span><strong>—</strong></div>
+    </div>
+    <button id="aggiornaSaldi" type="button">Aggiorna saldi</button>
+    <p id="messaggioSaldi" aria-live="polite">Premi “Aggiorna saldi” per leggere i saldi aggiornati.</p>
+  </div>
 
   <div id="modulo" class="pannello">
     <h2>Controlla il movimento</h2>
@@ -84,6 +98,7 @@ const messaggio = $('messaggio');
 const modulo = $('modulo');
 let tokenClient;
 let tokenInAttesa = false;
+let azioneToken = 'salva';
 
 $('tipo').addEventListener('change', () => {
   $('destinazioneBox').style.display =
@@ -176,13 +191,14 @@ function analizzaFrase(testo) {
     'Controlla descrizione, importo, tipo e conto. ' +
     'Se qualcosa non è corretto, modificalo prima di salvare.';
 }
-function creaTokenClient() {
+function creaTokenClient(azione = 'salva') {
   if (!window.google || !google.accounts || !google.accounts.oauth2) {
     messaggio.textContent = 'Google non è ancora pronto. Riprova tra qualche secondo.';
     tokenInAttesa = false;
     $('conferma').disabled = false;
     return;
   }
+  azioneToken = azione;
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: CLIENT_ID,
     scope: SCOPE,
@@ -193,7 +209,11 @@ function creaTokenClient() {
         $('conferma').disabled = false;
         return;
       }
-      await salvaNelFoglio(risposta.access_token);
+      if (azioneToken === 'saldi') {
+        await caricaSaldi(risposta.access_token);
+      } else {
+        await salvaNelFoglio(risposta.access_token);
+      }
     }
   });
 }
@@ -277,6 +297,91 @@ $('conferma').addEventListener('click', () => {
   creaTokenClient();
   if (tokenClient) tokenClient.requestAccessToken();
 });
+
+async function caricaSaldi(token) {
+  const messaggioSaldi = $('messaggioSaldi');
+  const boxSaldi = $('saldi');
+  messaggioSaldi.textContent = 'Lettura dei saldi in corso...';
+  const base = 'https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values/';
+  try {
+    const [risConti, risMovimenti] = await Promise.all([
+      fetch(base + encodeURIComponent("'Conti'!A:D"), { headers: { Authorization: 'Bearer ' + token } }),
+      fetch(base + encodeURIComponent("'" + SHEET_NAME + "'!A:K"), { headers: { Authorization: 'Bearer ' + token } })
+    ]);
+    const datiConti = await risConti.json();
+    const datiMovimenti = await risMovimenti.json();
+    if (!risConti.ok) throw new Error(datiConti.error?.message || 'Impossibile leggere la scheda Conti.');
+    if (!risMovimenti.ok) throw new Error(datiMovimenti.error?.message || 'Impossibile leggere i movimenti.');
+    const righeConti = datiConti.values || [];
+    const righeMovimenti = datiMovimenti.values || [];
+    const saldi = {};
+    for (let i = 1; i < righeConti.length; i++) {
+      const nome = String(righeConti[i][0] || '').trim();
+      const iniziale = Number(String(righeConti[i][2] ?? '0').replace(',', '.')) || 0;
+      if (nome) saldi[nome] = iniziale;
+    }
+    for (let i = 1; i < righeMovimenti.length; i++) {
+      const r = righeMovimenti[i];
+      if (String(r[10] || '').trim().toLowerCase() !== 'confermato') continue;
+      const importo = Number(String(r[3] || '0').replace(',', '.')) || 0;
+      const tipo = String(r[4] || '').trim().toLowerCase();
+      const conto = String(r[7] || '').trim();
+      const destinazione = String(r[9] || '').trim();
+      if (tipo === 'uscita' && Object.prototype.hasOwnProperty.call(saldi, conto)) saldi[conto] -= importo;
+      else if (tipo === 'entrata' && Object.prototype.hasOwnProperty.call(saldi, conto)) saldi[conto] += importo;
+      else if (tipo === 'trasferimento') {
+        if (Object.prototype.hasOwnProperty.call(saldi, conto)) saldi[conto] -= importo;
+        if (Object.prototype.hasOwnProperty.call(saldi, destinazione)) saldi[destinazione] += importo;
+      }
+    }
+    boxSaldi.replaceChildren();
+    ['Contanti', 'Carta ADI', 'Carta Pipino'].forEach(nome => {
+      const riga = document.createElement('div'); riga.className = 'saldo';
+      const etichetta = document.createElement('span'); etichetta.textContent = nome;
+      const valore = document.createElement('strong');
+      valore.textContent = Object.prototype.hasOwnProperty.call(saldi, nome)
+        ? saldi[nome].toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }) : 'Conto non trovato';
+      riga.append(etichetta, valore); boxSaldi.appendChild(riga);
+    });
+    messaggioSaldi.textContent = 'Saldi aggiornati. I movimenti non confermati sono esclusi.';
+  } catch (errore) {
+    messaggioSaldi.textContent = 'Errore nella lettura dei saldi: ' + errore.message;
+  } finally { $('aggiornaSaldi').disabled = false; }
+}
+
+$('aggiornaSaldi').addEventListener('click', () => {
+  if (!window.google || !google.accounts || !google.accounts.oauth2) {
+    $('messaggioSaldi').textContent = 'Google sta caricando. Riprova tra qualche secondo.'; return;
+  }
+  $('aggiornaSaldi').disabled = true;
+  creaTokenClient('saldi');
+  if (tokenClient) tokenClient.requestAccessToken();
+});
+
+// Attiva il riconoscimento vocale nei browser compatibili (es. Chrome).
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (SpeechRecognition) {
+  const riconoscimento = new SpeechRecognition();
+  riconoscimento.lang = 'it-IT';
+  riconoscimento.continuous = false;
+  riconoscimento.interimResults = false;
+  $('microfono').addEventListener('click', () => {
+    try { messaggio.textContent = 'Ti ascolto...'; riconoscimento.start(); }
+    catch (e) { messaggio.textContent = 'Il microfono è già attivo. Parla adesso.'; }
+  });
+  riconoscimento.onresult = evento => analizzaFrase(evento.results[0][0].transcript);
+  riconoscimento.onerror = evento => {
+    messaggio.textContent = evento.error === 'not-allowed'
+      ? 'Microfono bloccato: consenti l’accesso al microfono nelle impostazioni del browser.'
+      : 'Non sono riuscito ad ascoltare (' + evento.error + '). Premi Parla e riprova.';
+  };
+  riconoscimento.onend = () => { if (messaggio.textContent === 'Ti ascolto...') messaggio.textContent = 'Non ho sentito una frase. Premi Parla e riprova.'; };
+} else {
+  $('microfono').addEventListener('click', () => {
+    messaggio.textContent = 'Il riconoscimento vocale non è supportato da questo browser. Prova con Google Chrome e consenti il microfono.';
+  });
+}
+
 </script>
 </body>
 </html>
