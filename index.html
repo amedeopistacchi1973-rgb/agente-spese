@@ -1,0 +1,107 @@
+
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Il mio agente spese</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: Arial, sans-serif;
+      background: #f3f5f7;
+      color: #202833;
+      text-align: center;
+    }
+    main {
+      max-width: 420px;
+      margin: 30px auto;
+      padding: 28px 20px;
+      background: white;
+      border-radius: 24px;
+      box-shadow: 0 4px 20px #0001;
+    }
+    h1 { font-size: 25px; }
+    #microfono {
+      width: 120px;
+      height: 120px;
+      margin: 24px auto;
+      border: 0;
+      border-radius: 50%;
+      background: #20364b;
+      color: white;
+      font-size: 48px;
+      cursor: pointer;
+    }
+    #stato { min-height: 48px; line-height: 1.5; }
+    #risultato {
+      margin-top: 18px;
+      padding: 14px;
+      background: #f3f5f7;
+      border-radius: 12px;
+      text-align: left;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Il mio agente spese</h1>
+    <p>Premi il microfono e pronuncia la spesa.</p>
+    <button id="microfono" aria-label="Inizia ascolto">🎙️</button>
+    <p id="stato">Pronto quando vuoi.</p>
+    <div id="risultato">Esempio: «Ho speso 10 euro per la spesa da Pewex».</div>
+  </main>
+
+  <script>
+    const pulsante = document.getElementById('microfono');
+    const stato = document.getElementById('stato');
+    const risultato = document.getElementById('risultato');
+
+    const Riconoscimento =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!Riconoscimento) {
+      stato.textContent =
+        'Riconoscimento vocale non disponibile. Prova con Google Chrome.';
+      pulsante.disabled = true;
+    } else {
+      const ascolto = new Riconoscimento();
+      ascolto.lang = 'it-IT';
+      ascolto.continuous = false;
+      ascolto.interimResults = false;
+      ascolto.maxAlternatives = 1;
+
+      pulsante.addEventListener('click', () => {
+        risultato.textContent = '';
+        stato.textContent = 'Ti ascolto… parla adesso.';
+        pulsante.disabled = true;
+        try {
+          ascolto.start();
+        } catch (errore) {
+          stato.textContent = 'Non riesco ad avviare il microfono. Riprova.';
+          pulsante.disabled = false;
+        }
+      });
+
+      ascolto.onresult = (evento) => {
+        risultato.textContent =
+          'Ho capito: ' + evento.results[0][0].transcript;
+        stato.textContent =
+          'Voce riconosciuta. La registrazione nel foglio sarà collegata nel prossimo passaggio.';
+      };
+
+      ascolto.onerror = (evento) => {
+        stato.textContent = 'Errore del microfono: ' + evento.error +
+          '. Controlla i permessi e riprova.';
+      };
+
+      ascolto.onend = () => {
+        pulsante.disabled = false;
+      };
+    }
+  </script>
+</body>
+</html>
