@@ -6,102 +6,167 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Il mio agente spese</title>
   <style>
-    body {
-      margin: 0;
-      padding: 24px;
-      font-family: Arial, sans-serif;
-      background: #f3f5f7;
-      color: #202833;
-      text-align: center;
-    }
-    main {
-      max-width: 420px;
-      margin: 30px auto;
-      padding: 28px 20px;
-      background: white;
-      border-radius: 24px;
-      box-shadow: 0 4px 20px #0001;
-    }
-    h1 { font-size: 25px; }
-    #microfono {
-      width: 120px;
-      height: 120px;
-      margin: 24px auto;
-      border: 0;
-      border-radius: 50%;
-      background: #20364b;
-      color: white;
-      font-size: 48px;
-      cursor: pointer;
-    }
-    #stato { min-height: 48px; line-height: 1.5; }
-    #risultato {
-      margin-top: 18px;
-      padding: 14px;
-      background: #f3f5f7;
-      border-radius: 12px;
-      text-align: left;
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
-    }
+    body{margin:0;padding:20px;font-family:Arial,sans-serif;background:#f3f5f7;color:#202833;text-align:center}
+    main{max-width:440px;margin:20px auto;padding:24px 18px;background:white;border-radius:22px;box-shadow:0 4px 20px #0001}
+    h1{font-size:25px}
+    #microfono{width:110px;height:110px;margin:18px auto;border:0;border-radius:50%;background:#20364b;color:white;font-size:46px;cursor:pointer}
+    button,input,select{font-size:16px}
+    #stato{min-height:24px;line-height:1.4}
+    #risultato{margin:16px 0;padding:14px;background:#f3f5f7;border-radius:12px;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere}
+    label{display:block;text-align:left;margin-top:12px;font-weight:bold}
+    input,select{box-sizing:border-box;width:100%;padding:11px;margin-top:5px;border:1px solid #ccd2d8;border-radius:8px}
+    .azione{width:100%;padding:13px;margin-top:12px;border:0;border-radius:10px;cursor:pointer}
+    #conferma{background:#20364b;color:white}
+    #annulla{background:#e8ebef;color:#202833}
+    #conferma:disabled{opacity:.45}
   </style>
 </head>
 <body>
-  <main>
-    <h1>Il mio agente spese</h1>
-    <p>Premi il microfono e pronuncia la spesa.</p>
-    <button id="microfono" aria-label="Inizia ascolto">🎙️</button>
-    <p id="stato">Pronto quando vuoi.</p>
-    <div id="risultato">Esempio: «Ho speso 10 euro per la spesa da Pewex».</div>
-  </main>
+<main>
+  <h1>Il mio agente spese</h1>
+  <p>Premi il microfono e pronuncia il movimento.</p>
+  <button id="microfono" aria-label="Inizia ascolto">🎙️</button>
+  <p id="stato">Pronto quando vuoi.</p>
 
-  <script>
-    const pulsante = document.getElementById('microfono');
-    const stato = document.getElementById('stato');
-    const risultato = document.getElementById('risultato');
+  <div id="risultato">Esempio: «Ho speso 10 euro per la spesa da Pewex, pagata con Carta ADI».</div>
 
-    const Riconoscimento =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
+  <section id="modulo" hidden>
+    <label for="descrizione">Descrizione</label>
+    <input id="descrizione" autocomplete="off">
 
-    if (!Riconoscimento) {
-      stato.textContent =
-        'Riconoscimento vocale non disponibile. Prova con Google Chrome.';
+    <label for="importo">Importo in euro</label>
+    <input id="importo" type="number" min="0.01" step="0.01">
+
+    <label for="tipo">Tipo di movimento</label>
+    <select id="tipo">
+      <option>Uscita</option>
+      <option>Entrata</option>
+    </select>
+
+    <label for="categoria">Categoria</label>
+    <select id="categoria">
+      <option>Alimentari</option>
+      <option>Casa</option>
+      <option>Trasporti</option>
+      <option>Salute</option>
+      <option>Ristoranti e bar</option>
+      <option>Shopping</option>
+      <option>Bollette</option>
+      <option>Stipendio</option>
+      <option>Altro</option>
+    </select>
+
+    <label for="conto">Conto o metodo di pagamento</label>
+    <select id="conto">
+      <option value="">Scegli il conto</option>
+      <option>Contanti</option>
+      <option>Carta ADI</option>
+      <option>Carta Pipino</option>
+    </select>
+
+    <button class="azione" id="conferma" disabled>Conferma movimento</button>
+    <button class="azione" id="annulla">Annulla</button>
+  </section>
+</main>
+
+<script>
+  const pulsante = document.getElementById('microfono');
+  const stato = document.getElementById('stato');
+  const risultato = document.getElementById('risultato');
+  const modulo = document.getElementById('modulo');
+  const importo = document.getElementById('importo');
+  const descrizione = document.getElementById('descrizione');
+  const conto = document.getElementById('conto');
+  const conferma = document.getElementById('conferma');
+
+  const Riconoscimento = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  function controllaModulo() {
+    conferma.disabled = !descrizione.value.trim() ||
+      !(Number(importo.value) > 0) || !conto.value;
+  }
+
+  [descrizione, importo, conto].forEach(el => el.addEventListener('input', controllaModulo));
+  conto.addEventListener('change', controllaModulo);
+
+  if (!Riconoscimento) {
+    stato.textContent = 'Riconoscimento vocale non disponibile. Prova con Chrome.';
+    pulsante.disabled = true;
+  } else {
+    const ascolto = new Riconoscimento();
+    ascolto.lang = 'it-IT';
+    ascolto.continuous = false;
+    ascolto.interimResults = false;
+    ascolto.maxAlternatives = 1;
+
+    pulsante.addEventListener('click', () => {
+      modulo.hidden = true;
+      risultato.textContent = '';
+      stato.textContent = 'Ti ascolto… parla adesso.';
       pulsante.disabled = true;
-    } else {
-      const ascolto = new Riconoscimento();
-      ascolto.lang = 'it-IT';
-      ascolto.continuous = false;
-      ascolto.interimResults = false;
-      ascolto.maxAlternatives = 1;
-
-      pulsante.addEventListener('click', () => {
-        risultato.textContent = '';
-        stato.textContent = 'Ti ascolto… parla adesso.';
-        pulsante.disabled = true;
-        try {
-          ascolto.start();
-        } catch (errore) {
-          stato.textContent = 'Non riesco ad avviare il microfono. Riprova.';
-          pulsante.disabled = false;
-        }
-      });
-
-      ascolto.onresult = (evento) => {
-        risultato.textContent =
-          'Ho capito: ' + evento.results[0][0].transcript;
-        stato.textContent =
-          'Voce riconosciuta. La registrazione nel foglio sarà collegata nel prossimo passaggio.';
-      };
-
-      ascolto.onerror = (evento) => {
-        stato.textContent = 'Errore del microfono: ' + evento.error +
-          '. Controlla i permessi e riprova.';
-      };
-
-      ascolto.onend = () => {
+      try { ascolto.start(); }
+      catch (e) {
+        stato.textContent = 'Non riesco ad avviare il microfono. Riprova.';
         pulsante.disabled = false;
-      };
-    }
-  </script>
+      }
+    });
+
+    ascolto.onresult = (evento) => {
+      const frase = evento.results[0][0].transcript;
+      risultato.textContent = 'Ho capito: ' + frase;
+      const testo = frase.toLowerCase();
+
+      const matchImporto = testo.match(/(\d+(?:[.,]\d{1,2})?)\s*(?:euro|eur|€)?/);
+      if (matchImporto) importo.value = matchImporto[1].replace(',', '.');
+
+      let testoDescrizione = frase
+        .replace(/ho speso|ho pagato|ho comprato|spesa di|per la spesa/ig, '')
+        .replace(/\d+(?:[.,]\d{1,2})?\s*(?:euro|eur|€)?/ig, '')
+        .replace(/pagata con|pagato con|in contanti|con carta adi|con carta pipino/ig, '')
+        .trim();
+      descrizione.value = testoDescrizione || frase;
+
+      if (/\bentrata\b|\bstipendio\b|\bho ricevuto\b|\bincassato\b/i.test(testo)) {
+        document.getElementById('tipo').value = 'Entrata';
+      } else {
+        document.getElementById('tipo').value = 'Uscita';
+      }
+
+      if (/contanti/i.test(testo)) conto.value = 'Contanti';
+      else if (/carta adi/i.test(testo)) conto.value = 'Carta ADI';
+      else if (/carta pipino/i.test(testo)) conto.value = 'Carta Pipino';
+      else conto.value = '';
+
+      if (/alimentari|supermercato|pewex|spesa/i.test(testo)) {
+        document.getElementById('categoria').value = 'Alimentari';
+      } else if (/benzina|carburante|bus|autobus|treno|taxi/i.test(testo)) {
+        document.getElementById('categoria').value = 'Trasporti';
+      } else if (/stipendio/i.test(testo)) {
+        document.getElementById('categoria').value = 'Stipendio';
+      } else {
+        document.getElementById('categoria').value = 'Altro';
+      }
+
+      modulo.hidden = false;
+      controllaModulo();
+      stato.textContent = 'Controlla i dati. Il movimento non è ancora stato salvato.';
+    };
+
+    ascolto.onerror = (evento) => {
+      stato.textContent = 'Errore del microfono: ' + evento.error + '. Controlla i permessi.';
+    };
+
+    ascolto.onend = () => { pulsante.disabled = false; };
+  }
+
+  document.getElementById('annulla').addEventListener('click', () => {
+    modulo.hidden = true;
+    stato.textContent = 'Movimento annullato. Non è stato salvato.';
+  });
+
+  conferma.addEventListener('click', () => {
+    stato.textContent = 'La conferma è stata ricevuta, ma il salvataggio nel foglio non è ancora collegato.';
+  });
+</script>
 </body>
 </html>
