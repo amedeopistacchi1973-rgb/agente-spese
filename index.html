@@ -260,6 +260,8 @@ async function salvaNelFoglio(token) {
       ' €\nConto: ' + conto + '\nTipo: ' + tipo;
     modulo.style.display = 'none';
     $('note').value = '';
+    // Aggiorna automaticamente i saldi usando lo stesso token Google.
+    await caricaSaldi(token);
   } catch (errore) {
     messaggio.textContent = '❌ Salvataggio non riuscito: ' + errore.message +
       '\nControlla autorizzazioni e configurazione Google.';
